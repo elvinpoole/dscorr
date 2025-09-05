@@ -1,0 +1,40 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dscorr"
+version = "0.1.0"
+description = "DeltaSigma correlation utilities for weak lensing using treecorr"
+authors = [
+    { name = "Jack Elvin-Poole", email = "jelvinpo@uwaterloo.ca" }
+]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+keywords = ["weak-lensing", "astronomy", "cosmology"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Astronomy"
+]
+
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.15",
+    "treecorr>=5.1.1",
+    "astropy>=5.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8",
+]
+
+[tool.setuptools]
+packages = ["dscorr"]
