@@ -7,6 +7,7 @@ from astropy.constants import c, G
 from astropy import units as u
 from scipy.interpolate import interp1d
 
+
 @dataclasses.dataclass
 class DeltaSigmaConfig:
     """
@@ -47,16 +48,17 @@ class DeltaSigmaConfig:
     use_random_sub : bool, default=False
         Whether to compute and subtract signal from random catalogs.
     """
-    min_r: float = 0.09   #R bins
-    max_r: float = 200.    #R bins
-    nbins_r: int = 10     #R bins
+
+    min_r: float = 0.09  # R bins
+    max_r: float = 200.0  # R bins
+    nbins_r: int = 10  # R bins
     bin_slop: float = 0.01
     bin_type: str = "Log"
     var_method: str = "jackknife"
     nprocess: int = 1
     njk: int = 100
     sigcrit_weights: bool = True
-    covmoving: bool = True
+    comoving: bool = True
     flip_e1: bool = False
     flip_e2: bool = False
     z_fid: float = 2.0
@@ -64,18 +66,33 @@ class DeltaSigmaConfig:
     use_boost: bool = False
     use_random_sub: bool = False
 
+
 class DeltaSigma:
-    def __init__(self, *,
-                 lens_ra, lens_dec, lens_z, lens_w=None,
-                 source_ra, source_dec, source_e1, source_e2, source_w=None,
-                 nz_z, source_nz,
-                 rand_ra=None, rand_dec=None, rand_z=None, rand_w=None,
-                 config: Optional[DeltaSigmaConfig] = None,
-                 **kwargs):
+    def __init__(
+        self,
+        *,
+        lens_ra,
+        lens_dec,
+        lens_z,
+        lens_w=None,
+        source_ra,
+        source_dec,
+        source_e1,
+        source_e2,
+        source_w=None,
+        nz_z,
+        source_nz,
+        rand_ra=None,
+        rand_dec=None,
+        rand_z=None,
+        rand_w=None,
+        config: Optional[DeltaSigmaConfig] = None,
+        **kwargs,
+    ):
         """
         Class for computing galaxy–galaxy lensing ΔΣ with TreeCorr.
 
-        This class wraps TreeCorr correlation functions to compute ΔΣ, with optional corrections 
+        This class wraps TreeCorr correlation functions to compute ΔΣ, with optional corrections
         for boost factors, random subtraction. It assume we have individual redshifts for the lenses
         but no infomation on the individual redshifts of sources (only an n(z))
 
@@ -111,47 +128,68 @@ class DeltaSigma:
         results : dict
             Stores computed results (ΔΣ, covariances, intermediate correlations).
         """
-        if self.config.use_boost or self.config.use_random_sub:
-            assert self.rand_ra is not None
-            assert self.rand_dec is not None
-            assert self.rand_z is not None
-            self.using_randoms = True
-        else:
-            self.using_randoms = False
-        
-        # store arrays
-        self.lens_ra, self.lens_dec, self.lens_z, self.lens_w = map(np.asarray, (lens_ra, lens_dec, lens_z, lens_w))
-        self.source_ra, self.source_dec, self.source_w = map(np.asarray, (source_ra, source_dec, source_w))
-        self.source_e1, self.source_e2 = map(np.asarray, (source_e1, source_e2))
-        self.nz_zarray, self.nz = map(np.asarray, (nz_z, source_nz))
-        if self.using_randoms:
-            self.rand_ra, self.rand_dec, self.rand_z, self.rand_w = map(np.asarray, (rand_ra, rand_dec, rand_z, rand_w))
-
         # config + overrides
-        self.config, self.config_specified = (config, True) if config else (DeltaSigmaConfig(), False)
+        self.config, self.config_specified = (
+            (config, True) if config else (DeltaSigmaConfig(), False)
+        )
         for k, v in kwargs.items():
             if hasattr(self.config, k):
                 if self.config_specified:
-                    print(f'Overwriting config option {k} with {v} from kwargs')
+                    print(f"Overwriting config option {k} with {v} from kwargs")
                 setattr(self.config, k, v)
             else:
                 raise ValueError(f"Unknown config option {k}")
-        
-        #define the treecorr related config to be passed to the XXCorrelation instances later
+
+        if self.config.use_boost or self.config.use_random_sub:
+            assert rand_ra is not None
+            assert rand_dec is not None
+            assert rand_z is not None
+            self.using_randoms = True
+        else:
+            self.using_randoms = False
+
+        # store arrays
+        self.lens_ra, self.lens_dec, self.lens_z, self.lens_w = map(
+            np.asarray, (lens_ra, lens_dec, lens_z, lens_w)
+        )
+        self.source_ra, self.source_dec, self.source_w = map(
+            np.asarray, (source_ra, source_dec, source_w)
+        )
+        self.source_e1, self.source_e2 = map(np.asarray, (source_e1, source_e2))
+        self.nz_zarray, self.nz = map(np.asarray, (nz_z, source_nz))
+        if self.using_randoms:
+            self.rand_ra, self.rand_dec, self.rand_z, self.rand_w = map(
+                np.asarray, (rand_ra, rand_dec, rand_z, rand_w)
+            )
+        else:
+            self.rand_ra = None
+            self.rand_dec = None
+            self.rand_z= None
+            self.rand_w = None
+
+        # define the treecorr related config to be passed to the XXCorrelation instances later
         self.treecorr_config = dict(
-            min_sep   = self.config.min_r,
-            max_sep   = self.config.max_r,
-            nbins     = self.config.nbins_r,
-            bin_slop  = self.config.bin_slop,
-            bin_type  = self.config.bin_type,
-            metric    = "Rlens",
-            var_method= self.config.var_method,
-            cross_patch_weight = "match"
+            min_sep=self.config.min_r,
+            max_sep=self.config.max_r,
+            nbins=self.config.nbins_r,
+            bin_slop=self.config.bin_slop,
+            bin_type=self.config.bin_type,
+            metric="Rlens",
+            var_method=self.config.var_method,
+            cross_patch_weight="match",
         )
 
-        #what is the min and max redshift across all the samples
-        self.lens_zmin = self.lens_z.min() if (self.rand_z is None) else np.min([self.lens_z.min(), self.rand_z.min()])
-        self.lens_zmax = self.lens_z.max() if (self.rand_z is None) else np.max([self.lens_z.max(), self.rand_z.max()])
+        # what is the min and max redshift across all the samples
+        self.lens_zmin = (
+            self.lens_z.min()
+            if (self.rand_z is None)
+            else np.min([self.lens_z.min(), self.rand_z.min()])
+        )
+        self.lens_zmax = (
+            self.lens_z.max()
+            if (self.rand_z is None)
+            else np.max([self.lens_z.max(), self.rand_z.max()])
+        )
 
         self.results = {}
 
@@ -171,7 +209,7 @@ class DeltaSigma:
 
         lens_cat, source_cat, rand_cat = self._prepare_catalogs()
 
-        #measure disgma with treecorr using the KG class
+        # measure disgma with treecorr using the KG class
         kg = treecorr.KGCorrelation(**self.treecorr_config)
         kg.process(lens_cat, source_cat)
 
@@ -186,7 +224,7 @@ class DeltaSigma:
             nn_rand_source = treecorr.NNCorrelation(**self.treecorr_config)
             nn_rand_source.process(rand_cat, source_cat)
 
-            self.results["boost"] = nn_lens_source.weights/nn_rand_source.weights
+            self.results["boost"] = nn_lens_source.weights / nn_rand_source.weights
             self.results["nn_lens_source"] = nn_lens_source
             self.results["nn_rand_source"] = nn_rand_source
 
@@ -198,14 +236,19 @@ class DeltaSigma:
             self.results["dsigma_rand_cov"] = kg_rand.cov
             self.results["meanR_rand"] = kg_rand.meanr
             self.results["kg_rand"] = kg_rand
-        
-        #assemble results (and covarinaces)
+
+        # assemble results (and covarinaces)
         if self.config.use_boost and self.config.use_random_sub:
             corrs = (kg, nn_lens_source, nn_rand_source, kg_rand)
-            dsigma_treecorr_func = lambda corrs: corrs[0].xi*corrs[1].weight/corrs[2].weight - corrs[3].xi
+            dsigma_treecorr_func = (
+                lambda corrs: corrs[0].xi * corrs[1].weight / corrs[2].weight
+                - corrs[3].xi
+            )
         elif self.config.use_boost and not self.config.use_random_sub:
             corrs = (kg, nn_lens_source, nn_rand_source)
-            dsigma_treecorr_func = lambda corrs: corrs[0].xi*corrs[1].weight/corrs[2].weight
+            dsigma_treecorr_func = (
+                lambda corrs: corrs[0].xi * corrs[1].weight / corrs[2].weight
+            )
         elif not self.config.use_boost and self.config.use_random_sub:
             corrs = (kg, kg_rand)
             dsigma_treecorr_func = lambda corrs: corrs[0].xi - corrs[1].xi
@@ -213,10 +256,16 @@ class DeltaSigma:
             corrs = (kg,)
             dsigma_treecorr_func = lambda corrs: corrs[0].xi
 
-        self.results["dsigma"] = dsigma_treecorr_func( corrs )
-        self.results["dsigma_cov"] = treecorr.estimate_multi_cov(corrs, method='jackknife', func=dsigma_treecorr_func)
+        self.results["dsigma"] = dsigma_treecorr_func(corrs)
+        self.results["dsigma_cov"] = treecorr.estimate_multi_cov(
+            corrs, method="jackknife", func=dsigma_treecorr_func
+        )
 
-        return self.results["meanR"], self.results["dsigma"], np.sqrt(self.results["dsigma_cov"].diagonal())
+        return (
+            self.results["meanR"],
+            self.results["dsigma"],
+            np.sqrt(self.results["dsigma_cov"].diagonal()),
+        )
 
     def _prepare_catalogs(self):
         """
@@ -231,73 +280,100 @@ class DeltaSigma:
         rand_cat : treecorr.Catalog or None
             Catalog of random galaxies, if using randoms.
         """
-        fbias = self._calc_fbias(self.nz_zarray, self.nz, z_fid=self.config.z_fid, nsamples=self.config.fbias_samples)
+        fbias = self._calc_fbias(
+            self.nz_zarray,
+            self.nz,
+            z_fid=self.config.z_fid,
+            nsamples=self.config.fbias_nsamples,
+        )
 
         if self.config.comoving:
-            chi_fid = cosmo.comoving_distance(self.config.z_fid).to(u.Mpc).value  
-            chi_lens = cosmo.comoving_distance(self.lens_z).to(u.Mpc).value  
+            chi_fid = cosmo.comoving_distance(self.config.z_fid).to(u.Mpc).value
+            chi_lens = cosmo.comoving_distance(self.lens_z).to(u.Mpc).value
         else:
-            chi_fid =  cosmo.angular_diameter_distance(self.config.z_fid).to(u.Mpc).value  
-            chi_lens =  cosmo.angular_diameter_distance(self.lens_z).to(u.Mpc).value  
+            chi_fid = cosmo.angular_diameter_distance(self.config.z_fid).to(u.Mpc).value
+            chi_lens = cosmo.angular_diameter_distance(self.lens_z).to(u.Mpc).value
 
-        sc_per_lens = DeltaSigma.sig_crit(self.lens_z, self.config.z_fid)
+        sc_per_lens = DeltaSigma._sig_crit(self.lens_z, self.config.z_fid)
         fbias_per_lens = fbias(self.lens_z)
 
         if self.config.sigcrit_weights:
-            print('Applying sig_crit^-2 weights to the lenses (assuming fixed z sources)')
-            lens_weight = self.lens_w*sc_per_lens**-2
+            print(
+                "Applying sig_crit^-2 weights to the lenses (assuming fixed z sources)"
+            )
+            lens_weight = self.lens_w * sc_per_lens**-2
         else:
             lens_weight = self.lens_w
 
         # a 3D lens catalog
-        lens_cat = treecorr.Catalog(k=sc_per_lens*fbias_per_lens, ra=self.lens_ra, dec=self.lens_dec, r=chi_lens, ra_units='deg', dec_units='deg',
-                                w=lens_weight, npatch=self.config.njk)
+        lens_cat = treecorr.Catalog(
+            k=sc_per_lens * fbias_per_lens,
+            ra=self.lens_ra,
+            dec=self.lens_dec,
+            r=chi_lens,
+            ra_units="deg",
+            dec_units="deg",
+            w=lens_weight,
+            npatch=self.config.njk,
+        )
 
         # a "3D" source catalog, where all the source redshifts are set to z_fid
         source_cat_zfid = treecorr.Catalog(
-            ra=self.source_ra, dec=self.source_dec,
-            ra_units='deg', dec_units='deg',
-            g1=-1*self.source_e1 if self.config.flip_e1 else self.source_e1,
-            g2=-1*self.source_e2 if self.config.flip_e2 else self.source_e2, 
-            r = chi_fid*np.ones(len(self.source_ra)),
-            w=self.source_w, 
+            ra=self.source_ra,
+            dec=self.source_dec,
+            ra_units="deg",
+            dec_units="deg",
+            g1=-1 * self.source_e1 if self.config.flip_e1 else self.source_e1,
+            g2=-1 * self.source_e2 if self.config.flip_e2 else self.source_e2,
+            r=chi_fid * np.ones(len(self.source_ra)),
+            w=self.source_w,
             patch_centers=lens_cat.patch_centers,
         )
 
         if self.using_randoms:
-            #make randoms catalog object the same way we made the lens catalog
+            # make randoms catalog object the same way we made the lens catalog
             if self.config.comoving:
-                chi_rand = cosmo.comoving_distance(self.rand_z).to(u.Mpc).value  
+                chi_rand = cosmo.comoving_distance(self.rand_z).to(u.Mpc).value
             else:
-                chi_rand =  cosmo.angular_diameter_distance(self.rand_z).to(u.Mpc).value  
-                
-            sc_per_rand = DeltaSigma.sig_crit(self.rand_z, self.config.z_fid)
+                chi_rand = cosmo.angular_diameter_distance(self.rand_z).to(u.Mpc).value
+
+            sc_per_rand = DeltaSigma._sig_crit(self.rand_z, self.config.z_fid)
             fbias_per_rand = fbias(self.rand_z)
 
             if self.config.sigcrit_weights:
-                print('Applying sig_crit^-2 weights to the lenses (assuming fixed z sources)')
-                rand_weight = self.rand_w*sc_per_lens**-2
+                print(
+                    "Applying sig_crit^-2 weights to the lenses (assuming fixed z sources)"
+                )
+                rand_weight = self.rand_w * sc_per_lens**-2
             else:
                 rand_weight = self.rand_w
 
-            rand_cat = treecorr.Catalog(k=sc_per_rand*fbias_per_rand, ra=self.rand_ra, dec=self.rand_dec, r=chi_rand, ra_units='deg', dec_units='deg',
-                                    w=rand_weight, patch_centers=lens_cat.patch_centers )
+            rand_cat = treecorr.Catalog(
+                k=sc_per_rand * fbias_per_rand,
+                ra=self.rand_ra,
+                dec=self.rand_dec,
+                r=chi_rand,
+                ra_units="deg",
+                dec_units="deg",
+                w=rand_weight,
+                patch_centers=lens_cat.patch_centers,
+            )
         else:
             rand_cat = None
 
-        self._clear() #delete the data from self now that they are in treecorr format
+        self._clear()  # delete the data from self now that they are in treecorr format
 
         return lens_cat, source_cat_zfid, rand_cat
 
     def _calc_fbias(self, nz_zarray, nz, z_fid=2.0, nsamples=1000):
         """
-        Compute the redshift bias correction factor (f_bias) for ΔΣ measurements 
+        Compute the redshift bias correction factor (f_bias) for ΔΣ measurements
         when sources have been approximated as lying at a single fiducial redshift.
 
-        The correction accounts for the mismatch between the true source redshift 
-        distribution n(z) and the assumed fiducial redshift z_fid, by averaging 
+        The correction accounts for the mismatch between the true source redshift
+        distribution n(z) and the assumed fiducial redshift z_fid, by averaging
         ratios of critical surfac e densities (Σ_crit) over Monte Carlo samples.
-        
+
         Parameters
         ----------
         nz_zarray : array_like
@@ -318,24 +394,34 @@ class DeltaSigma:
         -----
         - Sampling from n(z) is performed via inverse-CDF sampling.
         - The bias factor is defined as:
-        
+
         .. math::
-            f_{bias}(z_l) = \\left[ \\frac{ 
+            f_{bias}(z_l) = \\left[ \\frac{
                 \\sum_i \\Sigma_{crit}^{-1}(z_l, z_{true,i}) \\Sigma_{crit}^{-1}(z_l, z_{fid}) }
                 { \\sum_i \\Sigma_{crit}^{-2}(z_l, z_{fid}) }
             \\right]^{-1}
 
-        - The returned function extrapolates beyond the input redshift range 
+        - The returned function extrapolates beyond the input redshift range
         using the values at the edges of the computed grid.
         """
-        zphot_samples, ztrue_samples = self.generate_zsamples_from_nz(nz_zarray, nz, nsamples, z_fid)
+        zphot_samples, ztrue_samples = self._generate_zsamples_from_nz(
+            nz_zarray, nz, nsamples, z_fid
+        )
 
         zl_grid = np.linspace(self.lens_zmin, self.lens_zmax, 100)
         finvbias_grid = np.zeros(len(zl_grid))
         for i, zl in enumerate(zl_grid):
-            finvbias_grid[i] = np.sum( (DeltaSigma._sig_crit(zl,ztrue_samples)**-1)*(DeltaSigma._sig_crit(zl,zphot_samples)**-1) ) / np.sum(DeltaSigma._sig_crit(zl,zphot_samples)**-2)
+            finvbias_grid[i] = np.sum(
+                (DeltaSigma._sig_crit(zl, ztrue_samples) ** -1)
+                * (DeltaSigma._sig_crit(zl, zphot_samples) ** -1)
+            ) / np.sum(DeltaSigma._sig_crit(zl, zphot_samples) ** -2)
 
-        fbias_func = interp1d(zl_grid, 1/finvbias_grid, bounds_error=False, fill_value=(1/finvbias_grid[0], 1/finvbias_grid[-1]))
+        fbias_func = interp1d(
+            zl_grid,
+            1 / finvbias_grid,
+            bounds_error=False,
+            fill_value=(1 / finvbias_grid[0], 1 / finvbias_grid[-1]),
+        )
         return fbias_func
 
     def _generate_zsamples_from_nz(self, nz_zarray, nz, nsamples, z_fid):
@@ -360,14 +446,16 @@ class DeltaSigma:
         ztrue_samples : ndarray
             True redshift samples drawn from n(z).
         """
-        #sample redshifts from the n(z)
+        # sample redshifts from the n(z)
         cdf = np.cumsum(nz)
         cdf /= cdf[-1]  # normalize to 1
-        inv_cdf = interp1d(cdf, nz_zarray, bounds_error=False, fill_value=(nz_zarray[0], nz_zarray[-1]))
+        inv_cdf = interp1d(
+            cdf, nz_zarray, bounds_error=False, fill_value=(nz_zarray[0], nz_zarray[-1])
+        )
         u = np.random.rand(nsamples)  # uniform [0,1]
         ztrue_samples = inv_cdf(u)
 
-        zphot_samples = z_fid*np.ones(nsamples)
+        zphot_samples = z_fid * np.ones(nsamples)
         return zphot_samples, ztrue_samples
 
     @staticmethod
@@ -429,19 +517,19 @@ class DeltaSigma:
         zs = np.atleast_1d(zs)
         zl, zs = np.broadcast_arrays(zl, zs)
 
-        pre = c**2. / (4.0 * np.pi * G)
+        pre = c**2.0 / (4.0 * np.pi * G)
 
-        D_s  = DeltaSigma._ang_diam_dist(zs)
-        D_l  = DeltaSigma._ang_diam_dist(zl)
+        D_s = DeltaSigma._ang_diam_dist(zs)
+        D_l = DeltaSigma._ang_diam_dist(zl)
         D_ls = DeltaSigma._ang_diam_dist(zl, zs)
 
         # avoid division by zero where zs <= zl
         mask = zs > zl
         sigma = np.full(zl.shape, np.inf) * (u.M_sun / u.pc**2)
-        #sigma[mask] = pre * D_s[mask] / (D_l[mask] * D_ls[mask])
+        # sigma[mask] = pre * D_s[mask] / (D_l[mask] * D_ls[mask])
         if np.any(mask):
             ratio = D_s[mask] / (D_l[mask] * D_ls[mask])  # dimension: 1/Mpc
-            sigma_si = pre * ratio                        # kg/m^2
+            sigma_si = pre * ratio  # kg/m^2
             sigma[mask] = sigma_si.to(u.M_sun / u.pc**2)  # convert to Msun/pc^2
 
         return sigma if (np.ndim(zl) or np.ndim(zs)) else sigma.item()
@@ -462,7 +550,7 @@ class DeltaSigma:
                 continue
             save_dict[key] = value
 
-        save_dict['config'] = dataclasses.asdict(self.config)
+        save_dict["config"] = dataclasses.asdict(self.config)
 
         np.savez(filename, **save_dict)
         print(f"Results saved to {filename}")
@@ -483,14 +571,19 @@ class DeltaSigma:
             Analysis instance with self.results populated.
         """
         data = np.load(filename, allow_pickle=True)
-        
+
         # Load config first
-        config_dict = data['config'].item() if data['config'].dtype == object else data['config']
+        config_dict = (
+            data["config"].item() if data["config"].dtype == object else data["config"]
+        )
         config = DeltaSigmaConfig(**config_dict)
 
         analysis = cls(config)
-        analysis.results = {k: data[k].item() if data[k].dtype == object else data[k]
-                            for k in data.files if k != 'config'}
+        analysis.results = {
+            k: data[k].item() if data[k].dtype == object else data[k]
+            for k in data.files
+            if k != "config"
+        }
         print(f"Results and config loaded from {filename}")
         return analysis
 
