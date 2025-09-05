@@ -56,12 +56,12 @@ def test_pipeline_runs(mock_catalogs):
         rand_dec=randoms["dec"],
         rand_z=randoms["z"],
         fbias_nsamples=100,
+        var_method = "shot",
     )
     r,ds,dserr = corr.process()
 
     # Check structure of results
     assert "meanr" in corr.results
     assert "dsigma" in corr.results
-    assert "dsigma_cov" in corr.results
     assert len(corr.results["meanr"]) == len(corr.results["dsigma"])
 

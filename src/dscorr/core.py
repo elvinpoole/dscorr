@@ -23,7 +23,7 @@ class DeltaSigmaConfig:
         Number of radial bins for TreeCorr.
     bin_slop : float, default=0.01
         Allowed fractional error in bin placement for TreeCorr.
-    _bin_type : {"Log", "Linear"}, default="Log"
+    bin_type : {"Log", "Linear"}, default="Log"
         Type of binning in TreeCorr.
     var_method : str, default="jackknife"
         Method for covariance estimation in TreeCorr.
@@ -148,6 +148,16 @@ class DeltaSigma:
         else:
             self.using_randoms = False
 
+        if lens_w is None:
+            lens_w = np.ones_like(lens_ra)
+        else:
+            lens_w = np.asarray(lens_w)
+
+        if source_w is None:
+            source_w = np.ones_like(source_ra)
+        else:
+            source_w = np.asarray(source_w)
+
         # store arrays
         self.lens_ra, self.lens_dec, self.lens_z, self.lens_w = map(
             np.asarray, (lens_ra, lens_dec, lens_z, lens_w)
@@ -199,7 +209,7 @@ class DeltaSigma:
 
         Returns
         -------
-        meanR : ndarray
+        meanr : ndarray
             Mean separation per bin.
         dsigma : ndarray
             Measured ΔΣ in each bin.
@@ -215,7 +225,7 @@ class DeltaSigma:
 
         self.results["dsigma_raw"] = kg.xi
         self.results["dsigma_raw_cov"] = kg.cov
-        self.results["meanR"] = kg.meanr
+        self.results["meanr"] = kg.meanr
         self.results["kg"] = kg
 
         if self.config.use_boost:
@@ -234,7 +244,7 @@ class DeltaSigma:
 
             self.results["dsigma_rand"] = kg_rand.xi
             self.results["dsigma_rand_cov"] = kg_rand.cov
-            self.results["meanR_rand"] = kg_rand.meanr
+            self.results["meanr_rand"] = kg_rand.meanr
             self.results["kg_rand"] = kg_rand
 
         # assemble results (and covarinaces)
@@ -257,12 +267,15 @@ class DeltaSigma:
             dsigma_treecorr_func = lambda corrs: corrs[0].xi
 
         self.results["dsigma"] = dsigma_treecorr_func(corrs)
-        self.results["dsigma_cov"] = treecorr.estimate_multi_cov(
-            corrs, method="jackknife", func=dsigma_treecorr_func
-        )
+        if self.config.var_method == "jackknife":
+            self.results["dsigma_cov"] = treecorr.estimate_multi_cov(
+                corrs, method="jackknife", func=dsigma_treecorr_func
+            )
+        else:
+            self.results["dsigma_cov"] = self.results["dsigma_raw_cov"] #TODO: do the shot noise covariance
 
         return (
-            self.results["meanR"],
+            self.results["meanr"],
             self.results["dsigma"],
             np.sqrt(self.results["dsigma_cov"].diagonal()),
         )
@@ -306,6 +319,11 @@ class DeltaSigma:
             lens_weight = self.lens_w
 
         # a 3D lens catalog
+        if self.config.var_method == "jackknife":
+            var_options_lens = { "npatch": self.config.njk }
+        else:
+            var_options_lens = { "npatch": 1 }
+
         lens_cat = treecorr.Catalog(
             k=sc_per_lens * fbias_per_lens,
             ra=self.lens_ra,
@@ -314,8 +332,13 @@ class DeltaSigma:
             ra_units="deg",
             dec_units="deg",
             w=lens_weight,
-            npatch=self.config.njk,
+            **var_options_lens,
         )
+
+        if self.config.var_method == "jackknife":
+            var_options_notlens = { "patch_centers": lens_cat.patch_centers }
+        else:
+            var_options_notlens = { "patch_centers": None }
 
         # a "3D" source catalog, where all the source redshifts are set to z_fid
         source_cat_zfid = treecorr.Catalog(
@@ -327,7 +350,7 @@ class DeltaSigma:
             g2=-1 * self.source_e2 if self.config.flip_e2 else self.source_e2,
             r=chi_fid * np.ones(len(self.source_ra)),
             w=self.source_w,
-            patch_centers=lens_cat.patch_centers,
+            **var_options_notlens,
         )
 
         if self.using_randoms:
@@ -356,7 +379,7 @@ class DeltaSigma:
                 ra_units="deg",
                 dec_units="deg",
                 w=rand_weight,
-                patch_centers=lens_cat.patch_centers,
+                **var_options_notlens,
             )
         else:
             rand_cat = None
