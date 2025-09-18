@@ -62,7 +62,7 @@ class DeltaSigmaConfig:
     flip_e1: bool = False
     flip_e2: bool = False
     z_fid: float = 2.0
-    fbias_nsamples: int = 10000
+    fbias_nsamples: int = 1000
     use_boost: bool = False
     use_random_sub: bool = False
 
@@ -168,6 +168,10 @@ class DeltaSigma:
         self.source_e1, self.source_e2 = map(np.asarray, (source_e1, source_e2))
         self.nz_zarray, self.nz = map(np.asarray, (nz_z, source_nz))
         if self.using_randoms:
+            if rand_w is None:
+                rand_w = np.ones_like(rand_ra)
+            else:
+                rand_w = np.asarray(rand_w)
             self.rand_ra, self.rand_dec, self.rand_z, self.rand_w = map(
                 np.asarray, (rand_ra, rand_dec, rand_z, rand_w)
             )
@@ -234,7 +238,7 @@ class DeltaSigma:
             nn_rand_source = treecorr.NNCorrelation(**self.treecorr_config)
             nn_rand_source.process(rand_cat, source_cat)
 
-            self.results["boost"] = nn_lens_source.weights / nn_rand_source.weights
+            self.results["boost"] = nn_lens_source.weight / nn_rand_source.weight
             self.results["nn_lens_source"] = nn_lens_source
             self.results["nn_rand_source"] = nn_rand_source
 
@@ -320,7 +324,7 @@ class DeltaSigma:
 
         # a 3D lens catalog
         if self.config.var_method == "jackknife":
-            var_options_lens = { "npatch": self.config.njk }
+            var_options_lens = { "npatch": self.config.njk } # we define the JK patches on the lenses 
         else:
             var_options_lens = { "npatch": 1 }
 
@@ -336,7 +340,7 @@ class DeltaSigma:
         )
 
         if self.config.var_method == "jackknife":
-            var_options_notlens = { "patch_centers": lens_cat.patch_centers }
+            var_options_notlens = { "patch_centers": lens_cat.patch_centers } # for catalog sthat are not the lens catalog, use the jk patches of the lenses
         else:
             var_options_notlens = { "patch_centers": None }
 
@@ -367,7 +371,7 @@ class DeltaSigma:
                 print(
                     "Applying sig_crit^-2 weights to the lenses (assuming fixed z sources)"
                 )
-                rand_weight = self.rand_w * sc_per_lens**-2
+                rand_weight = self.rand_w * sc_per_rand**-2
             else:
                 rand_weight = self.rand_w
 
